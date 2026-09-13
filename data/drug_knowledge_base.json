@@ -26,7 +26,7 @@
     { "salt": "Sulfonamides", "against_allergy": "Sulfonamides", "severity": "high", "note": "Known patient allergy — avoid." }
   ],
   "substitution_traps": [
-    { "query": "diabetes medicine", "trap_salt": "Homeopathic-R40", "reason": "Presented as a diabetes remedy but does not lower glucose and is not a substitute for prescribed treatment.", "redirect": "The patient's prescribed diabetes medicine is Metformin (Glycomet) — offer a refill instead." }
+    { "query": "diabetes medicine", "trap_salt": "Homeopathic-R40", "redirect_salt": "Metformin", "reason": "Presented as a diabetes remedy but does not lower glucose and is not a substitute for prescribed treatment.", "redirect": "The patient's prescribed diabetes medicine is Metformin (Glycomet) — offer a refill instead." }
   ],
   "schedules": {
     "OTC": "No prescription or per-order pharmacist gate.",
