@@ -126,6 +126,7 @@ interface RawGraphP1 {
     prescriptions: RawPrescription[];
     lab_results: RawLabResult[];
   };
+  pending_prescription?: RawPendingPrescription;
 }
 
 // --- Mappers: snake_case JSON -> camelCase typed domain objects ------------
@@ -246,7 +247,10 @@ function buildP1(): PatientGraph {
     previousMedications: [],
     purchases: raw.pre_consent.purchases.map(mapPurchase),
     labResults: raw.pre_consent.lab_results.map(mapLabResult),
-    pendingPrescription: undefined,
+    // Uploading a fresh prescription is independent of ABDM consent (FR-G4:
+    // prescription upload is its own graph-population source), so this is
+    // present regardless of consent_status.
+    pendingPrescription: raw.pending_prescription ? mapPendingPrescription(raw.pending_prescription) : undefined,
     abdmAvailable: mapAbdmBundle(raw.abdm_available),
   };
 }
