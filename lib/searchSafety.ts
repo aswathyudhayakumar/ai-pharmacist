@@ -6,7 +6,7 @@
  * asks it only to select which candidates to surface and explain them.
  */
 
-import { findSubstitutionTrap, getDrugBySalt } from "@/lib/kb";
+import { findSubstitutionTrap, getDrugBySalt, patientLegalStatusLabel } from "@/lib/kb";
 import type { PatientGraph } from "@/types/graph";
 import type { SearchFinding } from "@/types/search";
 
@@ -38,7 +38,7 @@ export function buildSearchCandidates(graph: PatientGraph, query: string): Searc
           brand: patientMed.brand,
           salt: patientMed.salt,
           class: redirectDrug.class,
-          schedule: redirectDrug.schedule,
+          legalStatus: patientLegalStatusLabel(redirectDrug.schedule),
           brandPriceInr: redirectDrug.brandPriceInr,
           prescribedFor: condition?.name,
         },
@@ -56,7 +56,7 @@ export function buildSearchCandidates(graph: PatientGraph, query: string): Searc
       salt: trap.trapSalt,
       brand: trapDrug?.brand,
       class: trapDrug?.class,
-      schedule: trapDrug?.schedule,
+      legalStatus: trapDrug ? patientLegalStatusLabel(trapDrug.schedule) : undefined,
       brandPriceInr: trapDrug?.brandPriceInr,
       reason: trap.reason,
       notes: trapDrug?.notes,

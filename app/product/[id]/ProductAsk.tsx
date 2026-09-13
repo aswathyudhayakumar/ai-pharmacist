@@ -18,12 +18,6 @@ const SEVERITY_BADGE: Record<string, string> = {
   minor: "bg-amber-50 text-amber-700",
 };
 
-function routingLabel(result: ProductQaResult): string {
-  if (result.routingOutcome === "pharmacist_queue") return "Routed to pharmacist review";
-  if (result.routingOutcome === "live_call") return "Escalated to a live call";
-  return result.findings.length > 0 ? "Auto-surfaced with a caution" : "No concerns flagged";
-}
-
 const SUGGESTED_QUESTIONS = ["Can I take this?", "Is this safe with my other medicines?", "How does this work?"];
 
 export default function ProductAsk({ patientId, salt }: { patientId: PatientId; salt: string }) {
@@ -124,13 +118,6 @@ export default function ProductAsk({ patientId, salt }: { patientId: PatientId; 
           {state.status === "ok" && (
             <div className="space-y-3">
               <p className="text-sm text-ink/90">{state.result.answer}</p>
-
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-pill bg-black/5 px-2.5 py-1 font-semibold text-ink/70">Schedule: {state.result.schedule}</span>
-                <span className="rounded-pill bg-black/5 px-2.5 py-1 font-semibold text-ink/70">
-                  {routingLabel(state.result)}
-                </span>
-              </div>
 
               {state.result.findings.length > 0 && (
                 <ul className="space-y-2">

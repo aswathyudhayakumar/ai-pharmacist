@@ -13,7 +13,8 @@
   },
   "conditions": [
     { "id": "cond_dm2", "name": "Type 2 diabetes", "since": "2016", "managed_by": "doc_gp" },
-    { "id": "cond_htn", "name": "Hypertension", "since": "2019", "managed_by": "doc_cardio" }
+    { "id": "cond_htn", "name": "Hypertension", "since": "2019", "managed_by": "doc_cardio" },
+    { "id": "cond_hyperlipidemia", "name": "Hyperlipidemia", "since": "2019", "managed_by": "doc_cardio" }
   ],
   "allergies": [
     { "id": "alg_sulfa", "substance": "Sulfonamides", "reaction": "rash", "severity": "moderate" }
@@ -26,7 +27,7 @@
   "current_medications": [
     { "id": "med_metformin", "brand": "Glycomet", "salt": "Metformin", "strength": "500mg", "for_condition": "cond_dm2", "prescribed_by": "doc_gp", "days_supply": 30, "last_purchase": "2026-08-20" },
     { "id": "med_amlodipine", "brand": "Amlong", "salt": "Amlodipine", "strength": "5mg", "for_condition": "cond_htn", "prescribed_by": "doc_cardio", "days_supply": 30, "last_purchase": "2026-08-10" },
-    { "id": "med_atorvastatin", "brand": "Atorva", "salt": "Atorvastatin", "strength": "10mg", "for_condition": "cond_htn", "prescribed_by": "doc_cardio", "days_supply": 30, "last_purchase": "2026-08-10" }
+    { "id": "med_atorvastatin", "brand": "Atorva", "salt": "Atorvastatin", "strength": "10mg", "for_condition": "cond_hyperlipidemia", "prescribed_by": "doc_cardio", "days_supply": 30, "last_purchase": "2026-08-10" }
   ],
   "previous_medications": [],
   "purchases": [

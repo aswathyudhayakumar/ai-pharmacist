@@ -11,19 +11,43 @@
     { "salt": "Dextromethorphan", "class": "Cough suppressant", "schedule": "OTC", "otc": true, "brand_price_inr": 85, "generic_equivalents": [] },
     { "salt": "Ibuprofen", "class": "NSAID", "schedule": "OTC", "otc": true, "brand_price_inr": 30, "generic_equivalents": [{ "brand": "Ibuprofen (generic)", "price_inr": 12 }], "notes": "Common analgesic; treated as OTC in this demo." },
     { "salt": "Paracetamol", "class": "Analgesic / antipyretic", "schedule": "OTC", "otc": true, "brand_price_inr": 25, "generic_equivalents": [{ "brand": "Paracetamol (generic)", "price_inr": 10 }] },
-    { "salt": "Homeopathic-R40", "brand": "Dr. Reckeweg R40", "class": "Homeopathic / AYUSH", "schedule": "AYUSH_OTC", "otc": true, "brand_price_inr": 266, "generic_equivalents": [], "notes": "Not a glucose-lowering agent. Not a substitute for prescribed diabetes treatment. Contains ~36% alcohol." }
+    { "salt": "Homeopathic-R40", "brand": "Dr. Reckeweg R40", "class": "Homeopathic / AYUSH", "schedule": "AYUSH_OTC", "otc": true, "brand_price_inr": 266, "generic_equivalents": [], "notes": "Not a glucose-lowering agent. Not a substitute for prescribed diabetes treatment. Contains ~36% alcohol." },
+    { "salt": "Pseudoephedrine", "class": "Decongestant (sympathomimetic)", "schedule": "OTC", "otc": true, "brand_price_inr": 40, "generic_equivalents": [{ "brand": "Pseudoephedrine (generic)", "price_inr": 18 }], "notes": "Common cold/decongestant ingredient; can raise blood pressure and blood glucose — check with a pharmacist if you have hypertension, diabetes, or a thyroid condition." },
+    { "salt": "Phenylephrine", "class": "Decongestant (sympathomimetic)", "schedule": "OTC", "otc": true, "brand_price_inr": 35, "generic_equivalents": [{ "brand": "Phenylephrine (generic)", "price_inr": 15 }], "notes": "Common cold/decongestant ingredient; can raise blood pressure and blood glucose — check with a pharmacist if you have hypertension, diabetes, or a thyroid condition." },
+    { "salt": "Diclofenac", "class": "NSAID", "schedule": "OTC", "otc": true, "brand_price_inr": 28, "generic_equivalents": [{ "brand": "Diclofenac (generic)", "price_inr": 12 }] },
+    { "salt": "Naproxen", "class": "NSAID", "schedule": "OTC", "otc": true, "brand_price_inr": 32, "generic_equivalents": [{ "brand": "Naproxen (generic)", "price_inr": 15 }] },
+    { "salt": "Aspirin", "class": "Analgesic / antiplatelet (NSAID)", "schedule": "OTC", "otc": true, "brand_price_inr": 20, "generic_equivalents": [{ "brand": "Aspirin (generic)", "price_inr": 8 }], "notes": "Increases bleeding and GI irritation risk, especially when combined with other NSAIDs or in patients prone to ulcers." },
+    { "salt": "Omeprazole", "class": "Proton pump inhibitor (PPI)", "schedule": "OTC", "otc": true, "brand_price_inr": 60, "generic_equivalents": [{ "brand": "Omeprazole (generic)", "price_inr": 25 }], "notes": "Take on an empty stomach; separate from levothyroxine if both are used." },
+    { "salt": "Ferrous sulfate", "class": "Iron supplement", "schedule": "OTC", "otc": true, "brand_price_inr": 50, "generic_equivalents": [{ "brand": "Ferrous sulfate (generic)", "price_inr": 20 }], "notes": "Separate from levothyroxine and antacids by several hours for best absorption." },
+    { "salt": "Cetirizine", "class": "Antihistamine", "schedule": "OTC", "otc": true, "brand_price_inr": 30, "generic_equivalents": [{ "brand": "Cetirizine (generic)", "price_inr": 12 }] },
+    { "salt": "ORS", "class": "Oral rehydration salts", "schedule": "OTC", "otc": true, "brand_price_inr": 20, "generic_equivalents": [] }
   ],
   "interactions": [
     { "a": "Clarithromycin", "b": "Atorvastatin", "severity": "major", "mechanism": "CYP3A4 inhibition raises statin blood levels", "effect": "Increased risk of myopathy / rhabdomyolysis" },
     { "a": "Ibuprofen", "b": "Amlodipine", "severity": "moderate", "mechanism": "NSAIDs blunt the antihypertensive effect", "effect": "Reduced blood-pressure control" },
-    { "a": "Calcium carbonate", "b": "Levothyroxine", "severity": "moderate", "mechanism": "Calcium reduces levothyroxine absorption", "effect": "Reduced thyroid medication effectiveness; separate doses by ~4 hours" }
+    { "a": "Calcium carbonate", "b": "Levothyroxine", "severity": "moderate", "mechanism": "Calcium reduces levothyroxine absorption", "effect": "Reduced thyroid medication effectiveness; separate doses by ~4 hours" },
+    { "a": "Diclofenac", "b": "Amlodipine", "severity": "moderate", "mechanism": "NSAIDs blunt the antihypertensive effect", "effect": "Reduced blood-pressure control" },
+    { "a": "Naproxen", "b": "Amlodipine", "severity": "moderate", "mechanism": "NSAIDs blunt the antihypertensive effect", "effect": "Reduced blood-pressure control" },
+    { "a": "Aspirin", "b": "Ibuprofen", "severity": "moderate", "mechanism": "Combined antiplatelet/NSAID effect on the GI lining and clotting", "effect": "Increased risk of bleeding and GI irritation" },
+    { "a": "Aspirin", "b": "Diclofenac", "severity": "moderate", "mechanism": "Combined antiplatelet/NSAID effect on the GI lining and clotting", "effect": "Increased risk of bleeding and GI irritation" },
+    { "a": "Aspirin", "b": "Naproxen", "severity": "moderate", "mechanism": "Combined antiplatelet/NSAID effect on the GI lining and clotting", "effect": "Increased risk of bleeding and GI irritation" },
+    { "a": "Omeprazole", "b": "Levothyroxine", "severity": "moderate", "mechanism": "Reduced gastric acidity impairs levothyroxine dissolution/absorption", "effect": "Reduced thyroid medication effectiveness; consider separating doses or monitoring TSH" },
+    { "a": "Ferrous sulfate", "b": "Levothyroxine", "severity": "moderate", "mechanism": "Iron binds levothyroxine, reducing its absorption", "effect": "Reduced thyroid medication effectiveness; separate doses by at least 4 hours" }
   ],
   "class_duplications": [
     { "class": "Statin (lipid-lowering)", "severity": "moderate", "note": "Two statins together is therapeutic duplication; only one should be used." }
   ],
   "contraindications": [
     { "salt": "Ibuprofen", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Caution: renal risk in older diabetics; monitor use." },
-    { "salt": "Sulfonamides", "against_allergy": "Sulfonamides", "severity": "high", "note": "Known patient allergy — avoid." }
+    { "salt": "Sulfonamides", "against_allergy": "Sulfonamides", "severity": "high", "note": "Known patient allergy — avoid." },
+    { "salt": "Pseudoephedrine", "against_condition": "Hypertension", "severity": "moderate", "note": "Sympathomimetic — can raise blood pressure; caution or avoid unless advised by your doctor." },
+    { "salt": "Phenylephrine", "against_condition": "Hypertension", "severity": "moderate", "note": "Sympathomimetic — can raise blood pressure; caution or avoid unless advised by your doctor." },
+    { "salt": "Pseudoephedrine", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Can raise blood glucose levels; caution advised." },
+    { "salt": "Phenylephrine", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Can raise blood glucose levels; caution advised." },
+    { "salt": "Pseudoephedrine", "against_condition": "Hypothyroidism", "severity": "minor", "note": "Label caution: sympathomimetics may interact with thyroid conditions — use as directed." },
+    { "salt": "Phenylephrine", "against_condition": "Hypothyroidism", "severity": "minor", "note": "Label caution: sympathomimetics may interact with thyroid conditions — use as directed." },
+    { "salt": "Diclofenac", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Caution: renal risk in older diabetics; monitor use." },
+    { "salt": "Naproxen", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Caution: renal risk in older diabetics; monitor use." }
   ],
   "substitution_traps": [
     { "query": "diabetes medicine", "trap_salt": "Homeopathic-R40", "redirect_salt": "Metformin", "reason": "Presented as a diabetes remedy but does not lower glucose and is not a substitute for prescribed treatment.", "redirect": "The patient's prescribed diabetes medicine is Metformin (Glycomet) — offer a refill instead." }

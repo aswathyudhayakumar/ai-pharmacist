@@ -132,6 +132,18 @@ export function getScheduleMeaning(schedule: Schedule): string {
   return knowledgeBase.schedules[schedule];
 }
 
+const RX_SCHEDULES = new Set<Schedule>(["H", "H1", "X"]);
+
+/**
+ * Plain-language, patient-facing legal-status label. Never exposes a raw
+ * schedule code (OTC/H/H1/X/AYUSH_OTC) to a patient — the schedule still
+ * drives routing internally (lib/router.ts) and may still be shown to a
+ * pharmacist; this is presentation only, for patient-facing surfaces.
+ */
+export function patientLegalStatusLabel(schedule: Schedule): string {
+  return RX_SCHEDULES.has(schedule) ? "Needs a doctor's prescription" : "No prescription needed";
+}
+
 /** Interactions where both sides appear in the given salt list. */
 export function findInteractionsAmong(salts: string[]): DrugInteraction[] {
   const set = new Set(salts.map((s) => s.toLowerCase()));

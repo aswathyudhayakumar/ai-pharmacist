@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BackBar } from "@/components/BackBar";
 import { Card, OutlineButton } from "@/components/ui";
-import { getDrugBySalt, getKnowledgeBase } from "@/lib/kb";
+import { getDrugBySalt, patientLegalStatusLabel } from "@/lib/kb";
 import { getCartCount } from "@/lib/cart";
 import { getActivePatientId } from "@/lib/session";
 import { addToCartAction } from "@/lib/cart-actions";
@@ -14,8 +14,6 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const drug = getDrugBySalt(salt);
   if (!drug) notFound();
 
-  const kb = getKnowledgeBase();
-  const scheduleMeaning = kb.schedules[drug.schedule];
   const cartCount = await getCartCount();
   const patientId = await getActivePatientId();
 
@@ -28,12 +26,13 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         <Card className="space-y-2 p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-xl font-bold text-ink">{drug.salt}</h2>
-            <span className="rounded-pill bg-black/5 px-2.5 py-1 text-xs font-semibold text-ink/70">{drug.schedule}</span>
+            <span className="rounded-pill bg-black/5 px-2.5 py-1 text-xs font-semibold text-ink/70">
+              {patientLegalStatusLabel(drug.schedule)}
+            </span>
           </div>
           <p className="text-sm text-ink/70">{drug.class}</p>
           <p className="text-lg font-semibold text-ink">₹{drug.brandPriceInr}</p>
           {drug.notes && <p className="text-sm text-ink/70">{drug.notes}</p>}
-          <p className="text-xs text-ink/50">{scheduleMeaning}</p>
           <form action={addToCartAction}>
             <input type="hidden" name="salt" value={drug.salt} />
             <OutlineButton type="submit">Add to cart</OutlineButton>
