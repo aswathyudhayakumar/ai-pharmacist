@@ -45,6 +45,7 @@ interface RawContraindication {
 interface RawSubstitutionTrap {
   query: string;
   trap_salt: string;
+  redirect_salt?: string;
   reason: string;
   redirect: string;
 }
@@ -97,6 +98,7 @@ function buildKnowledgeBase(): KnowledgeBase {
   const substitutionTraps: SubstitutionTrap[] = raw.substitution_traps.map((t) => ({
     query: t.query,
     trapSalt: t.trap_salt,
+    redirectSalt: t.redirect_salt,
     reason: t.reason,
     redirect: t.redirect,
   }));

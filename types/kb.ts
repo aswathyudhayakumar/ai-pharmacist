@@ -49,6 +49,8 @@ export interface Contraindication {
 export interface SubstitutionTrap {
   query: string;
   trapSalt: string;
+  /** Salt of the patient's actual prescribed treatment for this query, when the KB has a structured pointer (not just the prose in `redirect`). */
+  redirectSalt?: string;
   reason: string;
   redirect: string;
 }
