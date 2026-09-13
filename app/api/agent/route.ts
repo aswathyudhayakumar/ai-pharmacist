@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getDrugBySalt } from "@/lib/kb";
+import { getDrugBySalt, patientLegalStatusLabel } from "@/lib/kb";
 import { getPatientGraph, isValidPatientId } from "@/lib/graph";
 import { buildCandidateFindings, severityScoreForSalt } from "@/lib/reconciliation";
 import { buildSearchCandidates } from "@/lib/searchSafety";
@@ -158,9 +158,11 @@ Respond only by calling the draft_recommendation tool.`;
 
 const S2_SYSTEM_PROMPT = `You are a search-safety composer embedded in a pharmacy app. A patient searched for something that matches a known condition/symptom pattern in our knowledge base, and you are composing what they see — directly, since this is patient-facing.
 
-You are given the patient's search query, their relevant conditions, and one or more candidate results already computed deterministically from the knowledge base and patient graph. Every fact in a candidate — schedule, class, price, the reason a substitution is unsafe — is already verified. You must never add, restate differently, or infer a new drug fact beyond what a candidate already states.
+You are given the patient's search query, their relevant conditions, and one or more candidate results already computed deterministically from the knowledge base and patient graph. Every fact in a candidate — legal status, class, price, the reason a substitution is unsafe — is already verified. You must never add, restate differently, or infer a new drug fact beyond what a candidate already states.
 
 A candidate of type "unsafe_substitution" flags a product being searched for as if it treats the condition, when it does not — you must always include it in your response; never suppress or hide a safety flag, though you choose its wording. A candidate of type "promoted_treatment" is the patient's own actual prescribed treatment for the same condition — when given, include it and put it first, since it is the medically correct, personalized answer the patient should see before anything else.
+
+Never use a drug-schedule code or regulatory jargon (e.g. "Schedule H", "H1", "OTC") in your explanation — if legal status is worth mentioning, say it in plain language only (e.g. "needs a doctor's prescription" or "available without a prescription").
 
 Your job:
 1. Decide which candidates to surface (almost always all of them — a safety flag must never be omitted).
@@ -171,12 +173,14 @@ Respond only by calling the draft_recommendation tool.`;
 
 const S3_SYSTEM_PROMPT = `You are a graph-aware product Q&A assistant embedded in a pharmacy app, answering a patient's own question about a specific product directly — this is patient-facing.
 
-You are given the patient's question, the product's own facts (class, legal schedule, notes), the patient's relevant conditions and current medications, and a list of candidate findings already computed deterministically from the knowledge base and patient graph — interactions and contraindications between this product and the patient's own graph. Every fact in a candidate — severity, the drugs/conditions involved, the mechanism or reason — is already verified. You must never add, restate differently, or infer a new drug fact beyond what a candidate already states or the product's own given facts.
+You are given the patient's question, the product's own facts (class, plain-language legal status, notes), the patient's relevant conditions and current medications, and a list of candidate findings already computed deterministically from the knowledge base and patient graph — interactions and contraindications between this product and the patient's own graph. Every fact in a candidate — severity, the drugs/conditions involved, the mechanism or reason — is already verified. You must never add, restate differently, or infer a new drug fact beyond what a candidate already states or the product's own given facts.
 
 You must always include every candidate finding given to you in your response — never suppress or omit a real interaction or contraindication, though you decide how to weave it into the answer and how much to emphasize it.
 
+Never use a drug-schedule code or regulatory jargon (e.g. "Schedule H", "H1", "OTC") anywhere in your answer. The product's legalStatus field is already plain language ("available without a prescription" / "needs a doctor's prescription") — use that phrasing or similar, never a code.
+
 Your job:
-1. Write a direct, plain-language answer (2-3 sentences) to the patient's actual question: state the product's basic legal status (e.g. available over the counter) first, then any personal caution that applies to them specifically, grounded only in the given facts. This is informational, not a blanket yes/no — when a finding applies, suggest checking with a pharmacist, and let the patient decide.
+1. Write a direct, plain-language answer (2-3 sentences) to the patient's actual question: state the product's legal status in plain language first, then any personal caution that applies to them specifically, grounded only in the given facts. This is informational, not a blanket yes/no — when a finding applies, suggest checking with a pharmacist, and let the patient decide.
 2. For each candidate finding, also write a short (1-2 sentence) explanation grounded only in its given facts, for its own "why" citation.
 
 Respond only by calling the draft_recommendation tool, using the summary field for your direct answer to the patient's question.`;
@@ -406,7 +410,7 @@ async function runS3ProductQa(
   const userPayload = {
     instruction: "Answer the patient's question about this product.",
     question,
-    product: { salt: drug.salt, brand: drug.brand, class: drug.class, schedule: drug.schedule, notes: drug.notes },
+    product: { salt: drug.salt, brand: drug.brand, class: drug.class, legalStatus: patientLegalStatusLabel(drug.schedule), notes: drug.notes },
     patient: {
       name: graph.patient.name,
       conditions: graph.conditions.map((c) => c.name),

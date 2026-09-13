@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BackBar } from "@/components/BackBar";
 import { Card } from "@/components/ui";
-import { findSubstitutionTrap, getKnowledgeBase } from "@/lib/kb";
+import { findSubstitutionTrap, getKnowledgeBase, patientLegalStatusLabel } from "@/lib/kb";
 import { getCartCount } from "@/lib/cart";
 import { getActivePatientId } from "@/lib/session";
 import ComposedSearchResults from "./ComposedSearchResults";
@@ -65,7 +65,7 @@ export default async function SearchPage({
                           <p className="text-sm text-ink/60">{drug.class}</p>
                         </div>
                         <span className="shrink-0 rounded-pill bg-black/5 px-2.5 py-1 text-xs font-semibold text-ink/70">
-                          {drug.schedule}
+                          {patientLegalStatusLabel(drug.schedule)}
                         </span>
                       </div>
                       <p className="mt-2 text-sm font-semibold text-ink">₹{drug.brandPriceInr}</p>
