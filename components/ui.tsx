@@ -1,7 +1,7 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, HTMLAttributes } from "react";
 
-export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
-  return <div className={`rounded-card bg-white ring-1 ring-black/5 shadow-sm ${className}`}>{children}</div>;
+export function Card({ className = "", ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} className={`rounded-card bg-white ring-1 ring-black/5 shadow-sm ${className}`} />;
 }
 
 export function PrimaryButton({ className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
