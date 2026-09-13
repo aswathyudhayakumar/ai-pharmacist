@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getDrugBySalt, patientLegalStatusLabel } from "@/lib/kb";
 import { getPatientGraph, isValidPatientId } from "@/lib/graph";
-import { buildCandidateFindings, severityScoreForSalt } from "@/lib/reconciliation";
+import { buildCandidateFindings, priceOrderItems, severityScoreForSalt } from "@/lib/reconciliation";
 import { buildSearchCandidates } from "@/lib/searchSafety";
 import { buildProductQaCandidates } from "@/lib/productQa";
-import { assertAgentCanPerform, route, scheduleClassify, scoreForKbSeverity } from "@/lib/router";
+import { assertAgentCanPerform, isRxSchedule, route, scheduleClassify, scoreForKbSeverity } from "@/lib/router";
 import { saveDraft } from "@/lib/queue";
+import { addToCart } from "@/lib/cart";
 import type { PatientId } from "@/types/graph";
-import type { ReconciliationDraft, ReconciliationFinding } from "@/types/reconciliation";
+import type { PreparedOrder, ReconciliationDraft, ReconciliationFinding } from "@/types/reconciliation";
 import type { ComposedSearchResult, SearchFinding } from "@/types/search";
 import type { ProductQaResult, QaFinding } from "@/types/productQa";
 
@@ -145,14 +146,19 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
 
 const DRAFT_RECOMMENDATION_TOOL = AGENT_TOOLS.find((t) => t.name === "draft_recommendation")!;
 
-const S1_SYSTEM_PROMPT = `You are a clinical-safety drafting assistant embedded in a pharmacy app. A registered pharmacist reviews everything you produce before anything is dispensed — you draft, you never approve or dispatch.
+const S1_SYSTEM_PROMPT = `You are a clinical-safety drafting assistant embedded in a pharmacy app, preparing a patient's uploaded prescription for the next step. You draft and prepare — you never dispense, approve a substitution, or execute the final purchase; a human always takes that last step.
 
-You are given a pending prescription for a patient, the patient's current medicines/conditions/allergies, and a list of candidate findings already computed deterministically from a curated drug knowledge base (interactions, therapeutic-class duplications, generic-saving opportunities). Every fact in a candidate finding — severity, drugs involved, prices, mechanism — is already verified. You must never add, restate differently, or infer a new drug fact beyond what a candidate finding already states.
+You are given the pending prescription, the patient's current medicines/conditions/allergies, a list of candidate findings already computed deterministically from a curated drug knowledge base (interactions, therapeutic-class duplications, generic-saving opportunities), and each item's already-computed price (brand price, or a cheaper generic price with a savings note where one applies). Every fact given — severity, drugs involved, prices, mechanism — is already verified. You must never add, restate differently, or infer a new drug fact beyond what is already given.
+
+You are also told the audience for your summary — "pharmacist" (every item here needs a licensed pharmacist's approval; they will read your summary before approving) or "patient" (every item is non-prescription; the patient will read your summary directly before paying). Write for that audience:
+- audience "pharmacist": clinical findings matter — surface interactions/duplications/contraindications plainly, the way a colleague would flag them to you.
+- audience "patient": never use a drug-schedule code or regulatory jargon (e.g. "Schedule H", "H1", "OTC") anywhere. Keep it a short, friendly one-tap-order summary.
 
 Your job:
-1. Decide which candidate findings are worth surfacing to the pharmacist. Safety findings (interactions, duplications, contraindications) should almost always be surfaced. A generic-saving finding is usually worth surfacing for a medicine the patient will take long-term / on an ongoing basis, and usually not worth surfacing for a short course of treatment (e.g. a several-day antibiotic) where switching brand mid-course adds little value — use your judgement per item.
-2. For each finding you select, write a short (1-2 sentence) plain-language explanation a pharmacist can read at a glance, grounded only in the fields already given for that finding.
-3. Draft the pharmacist's selections: which of the pending prescription's items to add to the order (normally all of them, unless a finding suggests otherwise), a short coupon/savings note if relevant, and a short earliest-delivery estimate.
+1. Decide which candidate findings are worth surfacing. For a pharmacist audience, safety findings (interactions, duplications, contraindications) should almost always be included. A generic-saving finding is usually worth surfacing for a medicine taken long-term, less so for a short course (e.g. a several-day antibiotic) where switching brand mid-course adds little value.
+2. For each finding you select, write a short (1-2 sentence) plain-language explanation grounded only in the given facts.
+3. Write the overall summary for the given audience, plus a short coupon/savings note and delivery estimate grounded only in the given priced items (e.g. mention a generic-saving note if one is present; a short estimate like "Within 60 minutes" for delivery).
+4. Decide which of the pending prescription's items to add to the order — normally all of them, unless a finding suggests otherwise.
 
 Respond only by calling the draft_recommendation tool.`;
 
@@ -249,9 +255,13 @@ async function callDraftTool(systemPrompt: string, userPayload: unknown, generic
   return { ok: true, toolUse };
 }
 
-async function runS1Reconciliation(patientId: PatientId): Promise<
-  { ok: true; patientMessage: string } | { ok: false; status: number; error: string }
-> {
+/** Fixed, code-written, jargon-free legal notice for the pharmacist_queue path. Never model-authored, so it can never leak a schedule code. */
+const PHARMACIST_APPROVAL_NOTICE =
+  "These medicines need a licensed pharmacist's approval before they can be dispatched. A pharmacist will confirm in under a minute.";
+
+async function runS1Reconciliation(
+  patientId: PatientId
+): Promise<{ ok: true; order: PreparedOrder } | { ok: false; status: number; error: string }> {
   // Server-authoritative: the client only names which patient it's acting as.
   // Clinical facts (current meds, conditions, the pending prescription itself)
   // always come from our own graph store, never from the request body — a
@@ -266,8 +276,21 @@ async function runS1Reconciliation(patientId: PatientId): Promise<
   const candidateSalts = rx.items.map((i) => i.salt);
   const legalSchedules = candidateSalts.map((salt) => ({ salt, schedule: scheduleClassify(salt) ?? "unknown" }));
 
+  // The legal axis (drug schedule) deterministically decides the path — a
+  // KB lookup, never a model decision (FR-R2, FR-R3): any Rx-scheduled item
+  // routes the whole order to the pharmacist queue.
+  const anyRxScheduled = candidateSalts.some((salt) => {
+    const schedule = scheduleClassify(salt);
+    return schedule !== undefined && isRxSchedule(schedule);
+  });
+
+  const pricedItems = priceOrderItems(rx.items, candidateFindings);
+
   const userPayload = {
-    instruction: "Reconcile this pending prescription.",
+    instruction: anyRxScheduled
+      ? "Reconcile this pending prescription for pharmacist review."
+      : "Prepare this all-non-prescription order for one-tap purchase.",
+    audience: anyRxScheduled ? "pharmacist" : "patient",
     patient: {
       name: graph.patient.name,
       conditions: graph.conditions.map((c) => c.name),
@@ -278,6 +301,7 @@ async function runS1Reconciliation(patientId: PatientId): Promise<
       reason: rx.reason,
       items: rx.items.map((i) => ({ brand: i.brand, salt: i.salt, strength: i.strength })),
     },
+    pricedItems: pricedItems.map((i) => ({ salt: i.salt, unitPriceInr: i.unitPriceInr, genericSavingNote: i.genericSavingNote })),
     candidateFindings: candidateFindings.map((f) => ({ id: f.id, type: f.type, severity: f.severity, label: f.label, detail: f.detail })),
   };
 
@@ -295,39 +319,74 @@ async function runS1Reconciliation(patientId: PatientId): Promise<
     .map((f) => ({ ...f, explanation: explanationById.get(f.id) ?? "" }));
 
   const validMedsToAdd = (raw.medsToAdd ?? []).filter((salt) => candidateSalts.includes(salt));
+  const finalSalts = validMedsToAdd.length > 0 ? validMedsToAdd : candidateSalts;
+  const finalItems = pricedItems.filter((i) => finalSalts.includes(i.salt));
+  const totalInr = finalItems.reduce((sum, i) => sum + i.unitPriceInr, 0);
 
-  // The agent's contribution ends here — a draft, nothing more. Assert that
-  // before persisting/returning it (NFR-S2, FR-R6): this is enforced in
-  // code, and "draft_recommendation" is the only action this route ever
-  // asks the guard about.
+  // The agent's contribution ends here — a draft/preparation, nothing more.
+  // Assert that before persisting/returning it (NFR-S2, FR-R6): this is
+  // enforced in code, and "draft_recommendation" is the only action this
+  // route ever asks the guard about, on both paths below.
   assertAgentCanPerform("draft_recommendation");
 
-  const draft: ReconciliationDraft = {
-    patientId,
-    prescriptionId: rx.id,
-    createdAt: new Date().toISOString(),
-    summary: raw.summary ?? "",
-    findings: selectedFindings,
-    pharmacistSelections: {
-      medsToAdd: validMedsToAdd.length > 0 ? validMedsToAdd : candidateSalts,
-      bestCoupon: raw.bestCoupon,
-      earliestDelivery: raw.earliestDelivery,
-    },
-    legalSchedules,
-    status: "awaiting_pharmacist",
-  };
-
-  saveDraft(patientId, draft);
-
-  // Routing record only — every item here is legally gated (H) so this is
-  // already headed to the pharmacist queue regardless of clinical severity;
-  // computed for the audit trail, not to decide whether to save the draft.
+  // Routing record (audit trail) — deterministic, independent of what the
+  // model selected above.
   candidateSalts.forEach((salt) => {
     const decision = route({ drugSalt: salt, clinicalSeverityScore: severityScoreForSalt(candidateFindings, salt) });
     console.info(`S1 routing — ${salt}: ${decision.outcome} (${decision.reason})`);
   });
 
-  return { ok: true, patientMessage: "Your prescription is with our pharmacist for review. We'll confirm shortly." };
+  if (anyRxScheduled) {
+    // PATH B — any Rx-scheduled item routes the whole order to the
+    // pharmacist queue. The pharmacist sees the full draft (clinical
+    // findings included); the patient sees only the parsed items, their
+    // prices/generic savings, and a fixed jargon-free legal notice —
+    // never the clinical flags (FR-R6).
+    const draft: ReconciliationDraft = {
+      patientId,
+      prescriptionId: rx.id,
+      createdAt: new Date().toISOString(),
+      summary: raw.summary ?? "",
+      findings: selectedFindings,
+      pharmacistSelections: { medsToAdd: finalSalts, bestCoupon: raw.bestCoupon, earliestDelivery: raw.earliestDelivery },
+      legalSchedules,
+      status: "awaiting_pharmacist",
+    };
+    saveDraft(patientId, draft);
+
+    const order: PreparedOrder = {
+      prescriptionId: rx.id,
+      routingOutcome: "pharmacist_queue",
+      summary: "Here's what we've prepared for you.",
+      items: finalItems,
+      totalInr,
+      findings: [],
+      legalNote: PHARMACIST_APPROVAL_NOTICE,
+    };
+    return { ok: true, order };
+  }
+
+  // PATH A — every item is non-scheduled: nothing is legally gated, so the
+  // agent prepares the order end-to-end (adds it to the real cart) and the
+  // patient's own tap is the only thing left — the purchase, not the prep.
+  for (const salt of finalSalts) {
+    await addToCart(salt);
+  }
+
+  const order: PreparedOrder = {
+    prescriptionId: rx.id,
+    routingOutcome: "auto_ready",
+    summary: raw.summary ?? "",
+    items: finalItems,
+    totalInr,
+    coupon: raw.bestCoupon,
+    earliestDelivery: raw.earliestDelivery ?? "Within 60 minutes",
+    // Shown here (unlike the pharmacist_queue path) because no pharmacist
+    // will ever see this order — if a finding exists, the patient is the
+    // only person positioned to act on it.
+    findings: selectedFindings,
+  };
+  return { ok: true, order };
 }
 
 async function runS2ConditionSearch(
@@ -480,10 +539,11 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
-    // Patient-facing response stays neutral — no clinical findings travel
-    // back through this call. The draft itself only renders on
-    // /pharmacist-queue, a separate read from the server-side store.
-    return NextResponse.json({ status: "queued", patientMessage: result.patientMessage });
+    // The response IS the patient-facing view for both paths: for
+    // pharmacist_queue, findings is always [] here — the full clinical
+    // draft lives only in the server-side queue store, read separately by
+    // /pharmacist-queue, never by this call.
+    return NextResponse.json(result.order);
   }
 
   if (body.surface === "S2_search") {

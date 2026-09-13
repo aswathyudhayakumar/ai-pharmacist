@@ -20,6 +20,11 @@ export function scheduleClassify(salt: string): Schedule | undefined {
 
 const RX_SCHEDULES: ReadonlySet<Schedule> = new Set(["H", "H1", "X"]);
 
+/** Whether a schedule legally requires a pharmacist (FR-R3) — the deterministic split behind the prescription-upload path (auto-ready vs. pharmacist queue). */
+export function isRxSchedule(schedule: Schedule): boolean {
+  return RX_SCHEDULES.has(schedule);
+}
+
 /** Structured clinical-severity score band, per the fixed thresholds in CLAUDE.md §7. */
 export const SEVERITY_THRESHOLDS = {
   /** score >= this crosses into pharmacist-queue territory even for OTC (FR-R4). */

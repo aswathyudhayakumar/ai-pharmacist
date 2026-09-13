@@ -36,5 +36,15 @@
     "lab_results": [
       { "id": "lab_tsh", "name": "TSH", "value": "3.2 mIU/L", "date": "2026-08-01" }
     ]
+  },
+  "pending_prescription": {
+    "id": "rx_p1_002",
+    "date": "2026-09-12",
+    "reason": "cold and mild fever",
+    "items": [
+      { "brand": "Crocin", "salt": "Paracetamol", "strength": "500mg" },
+      { "brand": "Electral", "salt": "ORS", "strength": "" },
+      { "brand": "Corex Syrup", "salt": "Dextromethorphan", "strength": "" }
+    ]
   }
 }

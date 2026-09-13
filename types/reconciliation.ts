@@ -44,3 +44,43 @@ export interface ReconciliationDraft {
   dispatchedAt?: string;
   dispatchedSalts?: string[];
 }
+
+/**
+ * The prescription-upload split (CLAUDE.md FR-S1/FR-S2): the legal axis
+ * (drug schedule) deterministically decides which path an uploaded
+ * prescription takes. "auto_ready" (all items non-scheduled) means the
+ * agent has already prepared a one-tap order for the patient to pay
+ * themselves — nothing is legally gated. "pharmacist_queue" (any item is
+ * Schedule H/H1/X) means the same prep happened, but the order needs a
+ * licensed pharmacist's approval before dispatch — full ReconciliationDraft
+ * (clinical findings included) is what the pharmacist sees; this lighter
+ * PreparedOrder is what the patient sees, and clinical flags never appear
+ * in it for that path.
+ */
+export type RxRoutingOutcome = "auto_ready" | "pharmacist_queue";
+
+export interface PricedItem {
+  salt: string;
+  brand: string;
+  strength?: string;
+  unitPriceInr: number;
+  /** Plain-language savings note when a cheaper generic was applied — not a clinical fact, safe to show on both paths. */
+  genericSavingNote?: string;
+}
+
+export interface PreparedOrder {
+  prescriptionId: string;
+  routingOutcome: RxRoutingOutcome;
+  /** Patient-facing summary. For pharmacist_queue this is a fixed, deterministic line — never the model's pharmacist-audience text. */
+  summary: string;
+  items: PricedItem[];
+  totalInr: number;
+  /** auto_ready only. */
+  coupon?: string;
+  /** auto_ready only. */
+  earliestDelivery?: string;
+  /** Populated only for auto_ready — pharmacist_queue never sends clinical findings to the patient (FR-R6). */
+  findings: ReconciliationFinding[];
+  /** pharmacist_queue only: a fixed, code-written, jargon-free legal notice — never model-authored, so it can never leak a schedule code. */
+  legalNote?: string;
+}

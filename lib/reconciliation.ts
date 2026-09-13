@@ -9,7 +9,7 @@
 import { findClassDuplicationsAmong, findContraindications, findInteractionsAmong, getCheaperGenerics, getDrugBySalt } from "@/lib/kb";
 import { scoreForKbSeverity } from "@/lib/router";
 import type { PatientGraph } from "@/types/graph";
-import type { ReconciliationFinding } from "@/types/reconciliation";
+import type { PricedItem, ReconciliationFinding } from "@/types/reconciliation";
 
 export function buildCandidateFindings(graph: PatientGraph): ReconciliationFinding[] {
   const rx = graph.pendingPrescription;
@@ -97,4 +97,29 @@ export function findingReferencesSalt(finding: ReconciliationFinding, salt: stri
 export function severityScoreForSalt(findings: ReconciliationFinding[], salt: string): number {
   const relevant = findings.filter((f) => findingReferencesSalt(f, salt));
   return relevant.reduce((max, f) => Math.max(max, scoreForKbSeverity(f.severity)), 0);
+}
+
+/**
+ * Deterministically prices a prescription's items, applying the cheaper
+ * generic wherever buildCandidateFindings already found one worth
+ * surfacing — this is the "best available coupon" for the prescription-
+ * upload split, reusing the same generic-saving facts rather than
+ * recomputing them, so there is one source of truth for "is there a
+ * cheaper generic here."
+ */
+export function priceOrderItems(
+  items: { brand: string; salt: string; strength?: string }[],
+  candidateFindings: ReconciliationFinding[]
+): PricedItem[] {
+  return items.map((item) => {
+    const drug = getDrugBySalt(item.salt);
+    const brandPriceInr = drug?.brandPriceInr ?? 0;
+    const savingFinding = candidateFindings.find((f) => f.type === "generic_saving" && f.detail.salt === item.salt);
+    const genericPriceInr = savingFinding ? Number(savingFinding.detail.genericPriceInr) : undefined;
+    const unitPriceInr = genericPriceInr ?? brandPriceInr;
+    const genericSavingNote = savingFinding
+      ? `Switched to ${savingFinding.detail.genericBrand} — saved ₹${brandPriceInr - (genericPriceInr ?? 0)}`
+      : undefined;
+    return { salt: item.salt, brand: item.brand, strength: item.strength, unitPriceInr, genericSavingNote };
+  });
 }
