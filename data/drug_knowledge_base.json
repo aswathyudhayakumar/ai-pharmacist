@@ -1,0 +1,38 @@
+{
+  "_comment": "Drug knowledge base seed. General medical truth, patient-independent. The agent RETRIEVES from this; it never generates a medical fact. schedule drives the deterministic legal axis; severity fields feed the clinical axis. Illustrative for the prototype — not a clinical source.",
+  "drugs": [
+    { "salt": "Metformin", "class": "Biguanide (antidiabetic)", "schedule": "H", "otc": false, "brand_price_inr": 45, "generic_equivalents": [{ "brand": "Metformin (generic)", "price_inr": 25 }], "notes": "First-line for type 2 diabetes." },
+    { "salt": "Amlodipine", "class": "Calcium channel blocker (antihypertensive)", "schedule": "H", "otc": false, "brand_price_inr": 40, "generic_equivalents": [{ "brand": "Amlodipine (generic)", "price_inr": 18 }] },
+    { "salt": "Atorvastatin", "class": "Statin (lipid-lowering)", "schedule": "H", "otc": false, "brand_price_inr": 95, "generic_equivalents": [{ "brand": "Atorvastatin (generic)", "price_inr": 40 }] },
+    { "salt": "Rosuvastatin", "class": "Statin (lipid-lowering)", "schedule": "H", "otc": false, "brand_price_inr": 210, "generic_equivalents": [{ "brand": "Rosuvastatin (generic)", "price_inr": 55 }] },
+    { "salt": "Clarithromycin", "class": "Macrolide antibiotic", "schedule": "H", "otc": false, "brand_price_inr": 180, "generic_equivalents": [{ "brand": "Clarithromycin (generic)", "price_inr": 95 }] },
+    { "salt": "Levothyroxine", "class": "Thyroid hormone", "schedule": "H", "otc": false, "brand_price_inr": 130, "generic_equivalents": [{ "brand": "Levothyroxine (generic)", "price_inr": 60 }], "notes": "Take on an empty stomach; separate from calcium/iron/antacids." },
+    { "salt": "Calcium carbonate", "class": "Calcium supplement / antacid", "schedule": "OTC", "otc": true, "brand_price_inr": 90, "generic_equivalents": [{ "brand": "Calcium carbonate (generic)", "price_inr": 45 }] },
+    { "salt": "Dextromethorphan", "class": "Cough suppressant", "schedule": "OTC", "otc": true, "brand_price_inr": 85, "generic_equivalents": [] },
+    { "salt": "Ibuprofen", "class": "NSAID", "schedule": "OTC", "otc": true, "brand_price_inr": 30, "generic_equivalents": [{ "brand": "Ibuprofen (generic)", "price_inr": 12 }], "notes": "Common analgesic; treated as OTC in this demo." },
+    { "salt": "Paracetamol", "class": "Analgesic / antipyretic", "schedule": "OTC", "otc": true, "brand_price_inr": 25, "generic_equivalents": [{ "brand": "Paracetamol (generic)", "price_inr": 10 }] },
+    { "salt": "Homeopathic-R40", "brand": "Dr. Reckeweg R40", "class": "Homeopathic / AYUSH", "schedule": "AYUSH_OTC", "otc": true, "brand_price_inr": 266, "generic_equivalents": [], "notes": "Not a glucose-lowering agent. Not a substitute for prescribed diabetes treatment. Contains ~36% alcohol." }
+  ],
+  "interactions": [
+    { "a": "Clarithromycin", "b": "Atorvastatin", "severity": "major", "mechanism": "CYP3A4 inhibition raises statin blood levels", "effect": "Increased risk of myopathy / rhabdomyolysis" },
+    { "a": "Ibuprofen", "b": "Amlodipine", "severity": "moderate", "mechanism": "NSAIDs blunt the antihypertensive effect", "effect": "Reduced blood-pressure control" },
+    { "a": "Calcium carbonate", "b": "Levothyroxine", "severity": "moderate", "mechanism": "Calcium reduces levothyroxine absorption", "effect": "Reduced thyroid medication effectiveness; separate doses by ~4 hours" }
+  ],
+  "class_duplications": [
+    { "class": "Statin (lipid-lowering)", "severity": "moderate", "note": "Two statins together is therapeutic duplication; only one should be used." }
+  ],
+  "contraindications": [
+    { "salt": "Ibuprofen", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Caution: renal risk in older diabetics; monitor use." },
+    { "salt": "Sulfonamides", "against_allergy": "Sulfonamides", "severity": "high", "note": "Known patient allergy — avoid." }
+  ],
+  "substitution_traps": [
+    { "query": "diabetes medicine", "trap_salt": "Homeopathic-R40", "reason": "Presented as a diabetes remedy but does not lower glucose and is not a substitute for prescribed treatment.", "redirect": "The patient's prescribed diabetes medicine is Metformin (Glycomet) — offer a refill instead." }
+  ],
+  "schedules": {
+    "OTC": "No prescription or per-order pharmacist gate.",
+    "AYUSH_OTC": "AYUSH/OTC product; no prescription gate, but not a substitute for prescribed treatment.",
+    "H": "Prescription required; dispensing by/under a registered pharmacist.",
+    "H1": "As H, plus stricter sale-register recordkeeping.",
+    "X": "As H, plus prescription in duplicate; licensee retains a copy."
+  }
+}

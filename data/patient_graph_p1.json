@@ -1,0 +1,40 @@
+{
+  "_comment": "Patient graph seed — P1 (new user). Demonstrates cold-start -> ABDM-consent -> graph-populates. The loader starts from pre_consent (empty). On consent, abdm_available is merged into the working graph. Today's date for the demo: 2026-09-12.",
+  "patient": {
+    "id": "pat_002",
+    "name": "Ananya Menon",
+    "age": 32,
+    "city": "Bengaluru",
+    "preferences": {
+      "generic_substitution_ok": true,
+      "language": "English",
+      "prefers_human_contact": false
+    }
+  },
+  "consent_status": "not_granted",
+  "pre_consent": {
+    "conditions": [],
+    "allergies": [],
+    "current_medications": [],
+    "purchases": [],
+    "lab_results": []
+  },
+  "abdm_available": {
+    "conditions": [
+      { "id": "cond_hypothyroid", "name": "Hypothyroidism", "since": "2022", "managed_by": "doc_endo" }
+    ],
+    "allergies": [],
+    "doctors": [
+      { "id": "doc_endo", "name": "Dr. Priya Rao", "specialty": "Endocrinologist" }
+    ],
+    "current_medications": [
+      { "id": "med_levothyroxine", "brand": "Thyronorm", "salt": "Levothyroxine", "strength": "75mcg", "for_condition": "cond_hypothyroid", "prescribed_by": "doc_endo", "days_supply": 30, "last_purchase": "2026-08-15" }
+    ],
+    "prescriptions": [
+      { "id": "rx_p1_001", "prescribed_by": "doc_endo", "date": "2026-08-15", "items": [ { "brand": "Thyronorm", "salt": "Levothyroxine", "strength": "75mcg" } ] }
+    ],
+    "lab_results": [
+      { "id": "lab_tsh", "name": "TSH", "value": "3.2 mIU/L", "date": "2026-08-01" }
+    ]
+  }
+}

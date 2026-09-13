@@ -1,0 +1,51 @@
+{
+  "_comment": "Patient graph seed. This is THIS patient's data only. General medical facts live in drug_knowledge_base.json. The agent overlays the KB onto this graph; it never writes medical facts here from model output. Today's date for the demo: 2026-09-12.",
+  "patient": {
+    "id": "pat_001",
+    "name": "Lakshmi Rao",
+    "age": 68,
+    "city": "Bengaluru",
+    "preferences": {
+      "generic_substitution_ok": true,
+      "language": "English",
+      "prefers_human_contact": true
+    }
+  },
+  "conditions": [
+    { "id": "cond_dm2", "name": "Type 2 diabetes", "since": "2016", "managed_by": "doc_gp" },
+    { "id": "cond_htn", "name": "Hypertension", "since": "2019", "managed_by": "doc_cardio" }
+  ],
+  "allergies": [
+    { "id": "alg_sulfa", "substance": "Sulfonamides", "reaction": "rash", "severity": "moderate" }
+  ],
+  "doctors": [
+    { "id": "doc_gp", "name": "Dr. Meera Nair", "specialty": "General physician" },
+    { "id": "doc_cardio", "name": "Dr. S. Krishnan", "specialty": "Cardiologist" },
+    { "id": "doc_physician_b", "name": "Dr. Anil Kumar", "specialty": "Physician" }
+  ],
+  "current_medications": [
+    { "id": "med_metformin", "brand": "Glycomet", "salt": "Metformin", "strength": "500mg", "for_condition": "cond_dm2", "prescribed_by": "doc_gp", "days_supply": 30, "last_purchase": "2026-08-20" },
+    { "id": "med_amlodipine", "brand": "Amlong", "salt": "Amlodipine", "strength": "5mg", "for_condition": "cond_htn", "prescribed_by": "doc_cardio", "days_supply": 30, "last_purchase": "2026-08-10" },
+    { "id": "med_atorvastatin", "brand": "Atorva", "salt": "Atorvastatin", "strength": "10mg", "for_condition": "cond_htn", "prescribed_by": "doc_cardio", "days_supply": 30, "last_purchase": "2026-08-10" }
+  ],
+  "previous_medications": [],
+  "purchases": [
+    { "med": "med_metformin", "date": "2026-08-20", "days_supply": 30 },
+    { "med": "med_amlodipine", "date": "2026-08-10", "days_supply": 30 },
+    { "med": "med_atorvastatin", "date": "2026-08-10", "days_supply": 30 }
+  ],
+  "lab_results": [
+    { "id": "lab_hba1c", "name": "HbA1c", "value": "7.8%", "date": "2026-07-30" }
+  ],
+  "pending_prescription": {
+    "id": "rx_new_001",
+    "prescribed_by": "doc_physician_b",
+    "date": "2026-09-12",
+    "reason": "chest infection",
+    "items": [
+      { "brand": "Clarithro", "salt": "Clarithromycin", "strength": "500mg" },
+      { "brand": "Rosuvas", "salt": "Rosuvastatin", "strength": "10mg" },
+      { "brand": "Cofsils Syrup", "salt": "Dextromethorphan", "strength": "" }
+    ]
+  }
+}
