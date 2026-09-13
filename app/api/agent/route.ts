@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { getDrugBySalt } from "@/lib/kb";
 import { getPatientGraph, isValidPatientId } from "@/lib/graph";
 import { buildCandidateFindings, severityScoreForSalt } from "@/lib/reconciliation";
 import { buildSearchCandidates } from "@/lib/searchSafety";
-import { assertAgentCanPerform, route, scheduleClassify } from "@/lib/router";
+import { buildProductQaCandidates } from "@/lib/productQa";
+import { assertAgentCanPerform, route, scheduleClassify, scoreForKbSeverity } from "@/lib/router";
 import { saveDraft } from "@/lib/queue";
 import type { PatientId } from "@/types/graph";
 import type { ReconciliationDraft, ReconciliationFinding } from "@/types/reconciliation";
 import type { ComposedSearchResult, SearchFinding } from "@/types/search";
+import type { ProductQaResult, QaFinding } from "@/types/productQa";
 
 export const runtime = "nodejs";
 
@@ -166,10 +169,23 @@ Your job:
 
 Respond only by calling the draft_recommendation tool.`;
 
+const S3_SYSTEM_PROMPT = `You are a graph-aware product Q&A assistant embedded in a pharmacy app, answering a patient's own question about a specific product directly — this is patient-facing.
+
+You are given the patient's question, the product's own facts (class, legal schedule, notes), the patient's relevant conditions and current medications, and a list of candidate findings already computed deterministically from the knowledge base and patient graph — interactions and contraindications between this product and the patient's own graph. Every fact in a candidate — severity, the drugs/conditions involved, the mechanism or reason — is already verified. You must never add, restate differently, or infer a new drug fact beyond what a candidate already states or the product's own given facts.
+
+You must always include every candidate finding given to you in your response — never suppress or omit a real interaction or contraindication, though you decide how to weave it into the answer and how much to emphasize it.
+
+Your job:
+1. Write a direct, plain-language answer (2-3 sentences) to the patient's actual question: state the product's basic legal status (e.g. available over the counter) first, then any personal caution that applies to them specifically, grounded only in the given facts. This is informational, not a blanket yes/no — when a finding applies, suggest checking with a pharmacist, and let the patient decide.
+2. For each candidate finding, also write a short (1-2 sentence) explanation grounded only in its given facts, for its own "why" citation.
+
+Respond only by calling the draft_recommendation tool, using the summary field for your direct answer to the patient's question.`;
+
 interface AgentRequestBody {
   patientId?: string;
   surface?: "S1_prescription" | "S2_search" | "S3_qa";
   query?: string;
+  productSalt?: string;
 }
 
 interface DraftToolInput {
@@ -370,6 +386,71 @@ async function runS2ConditionSearch(
   };
 }
 
+async function runS3ProductQa(
+  patientId: PatientId,
+  salt: string,
+  question: string
+): Promise<{ ok: true; result: ProductQaResult } | { ok: false; status: number; error: string }> {
+  const drug = getDrugBySalt(salt);
+  if (!drug) {
+    return { ok: false, status: 404, error: "Unknown product." };
+  }
+
+  const graph = getPatientGraph(patientId);
+  const candidateFindings = buildProductQaCandidates(graph, salt);
+
+  // Every real interaction/contraindication is mandatory — the model can
+  // decide how to phrase and weave these in, never whether to mention them.
+  const mandatoryIds = candidateFindings.map((f) => f.id);
+
+  const userPayload = {
+    instruction: "Answer the patient's question about this product.",
+    question,
+    product: { salt: drug.salt, brand: drug.brand, class: drug.class, schedule: drug.schedule, notes: drug.notes },
+    patient: {
+      name: graph.patient.name,
+      conditions: graph.conditions.map((c) => c.name),
+      currentMedications: graph.currentMedications.map((m) => `${m.brand} (${m.salt})`),
+    },
+    candidateFindings: candidateFindings.map((f) => ({ id: f.id, type: f.type, severity: f.severity, label: f.label, detail: f.detail })),
+  };
+
+  const callResult = await callDraftTool(S3_SYSTEM_PROMPT, userPayload, "Couldn't answer that right now.");
+  if (!callResult.ok) return callResult;
+  const raw = callResult.toolUse.input as DraftToolInput;
+
+  const explanationById = new Map((raw.explanations ?? []).map((e) => [e.findingId, e.text]));
+  const selectedIds = new Set([...(raw.selectedFindingIds ?? []), ...mandatoryIds]);
+  const selectedFindings: QaFinding[] = candidateFindings
+    .filter((f) => selectedIds.has(f.id))
+    .map((f) => ({
+      ...f,
+      explanation: explanationById.get(f.id) ?? String(f.detail.note ?? f.detail.effect ?? ""),
+    }));
+
+  // The agent's contribution ends here — an explanation, nothing more. This
+  // surface never approves, dispenses, or blocks a purchase; add-to-cart
+  // stays enabled regardless of what this answer says (NFR-S2, FR-R6).
+  assertAgentCanPerform("explain_medication");
+
+  const schedule = scheduleClassify(salt) ?? "unknown";
+  const maxSeverityScore = candidateFindings.reduce((max, f) => Math.max(max, scoreForKbSeverity(f.severity)), 0);
+  const decision = route({ drugSalt: salt, clinicalSeverityScore: maxSeverityScore });
+  console.info(`S3 routing — ${salt}: ${decision.outcome} (${decision.reason})`);
+
+  return {
+    ok: true,
+    result: {
+      question,
+      salt,
+      schedule,
+      answer: raw.summary ?? "",
+      findings: selectedFindings,
+      routingOutcome: decision.outcome,
+    },
+  };
+}
+
 export async function POST(request: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -414,10 +495,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result.result);
   }
 
+  if (body.surface === "S3_qa") {
+    if (!body.query || !body.query.trim()) {
+      return NextResponse.json({ error: "A question is required." }, { status: 400 });
+    }
+    if (!body.productSalt || !body.productSalt.trim()) {
+      return NextResponse.json({ error: "A product is required." }, { status: 400 });
+    }
+    const result = await runS3ProductQa(body.patientId, body.productSalt, body.query);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    // This surface is patient-facing by design — the answer and its
+    // findings go straight back to whoever asked; add-to-cart is never
+    // touched by this route (inform, don't block).
+    return NextResponse.json(result.result);
+  }
+
   return NextResponse.json(
     {
       status: "not_implemented",
-      message: "This surface isn't built yet. S1_prescription and S2_search are live; S3_qa lands in a later phase.",
+      message: "This surface isn't built yet. S1_prescription, S2_search, and S3_qa are all live.",
       tools: AGENT_TOOLS.map((t) => t.name),
     },
     { status: 501 }

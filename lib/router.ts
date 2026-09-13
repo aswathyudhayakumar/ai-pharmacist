@@ -34,6 +34,29 @@ export function bandSeverity(score: number): ClinicalBand {
   return "low";
 }
 
+/**
+ * Maps a KB severity word to a numeric band on this router's own scale — the
+ * word itself is always KB-sourced (never model-produced); this mapping is
+ * just how the router translates it into the fixed thresholds above.
+ * "moderate" stays under the queue threshold on purpose: an OTC item with a
+ * moderate interaction/contraindication (e.g. Ibuprofen × Amlodipine) should
+ * auto-surface with a cited caution (FR-R5), not queue — a legally gated
+ * item queues anyway via the legal axis regardless of this score. "major"/
+ * "high" cross the queue threshold so a serious finding queues even for an
+ * OTC item (FR-R4).
+ */
+const KB_SEVERITY_TO_SCORE: Record<string, number> = {
+  major: 70,
+  high: 70,
+  moderate: 30,
+  minor: 10,
+  info: 5,
+};
+
+export function scoreForKbSeverity(severity: string): number {
+  return KB_SEVERITY_TO_SCORE[severity.toLowerCase()] ?? 0;
+}
+
 export interface RouteRequest {
   /** Drug salt to classify legally. Omit for a purely clinical finding not tied to one drug (e.g. a duplication across two salts — pass either). */
   drugSalt?: string;

@@ -4,7 +4,9 @@ import { BackBar } from "@/components/BackBar";
 import { Card, OutlineButton } from "@/components/ui";
 import { getDrugBySalt, getKnowledgeBase } from "@/lib/kb";
 import { getCartCount } from "@/lib/cart";
+import { getActivePatientId } from "@/lib/session";
 import { addToCartAction } from "@/lib/cart-actions";
+import ProductAsk from "./ProductAsk";
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,6 +17,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const kb = getKnowledgeBase();
   const scheduleMeaning = kb.schedules[drug.schedule];
   const cartCount = await getCartCount();
+  const patientId = await getActivePatientId();
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-page">
@@ -51,41 +54,14 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           </Card>
         )}
 
-        <Card className="space-y-3 border border-dashed border-black/10 p-4">
-          <h3 className="font-semibold text-ink">Ask your question</h3>
-          <p className="text-xs text-ink/50">
-            The graph-aware Health Assistant lands in a later phase (S3). This preview shows where it will sit.
-          </p>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Suggested questions, coming soon">
-            {["Is this safe with my other medicines?", "How does this work?", "Cheaper alternatives?"].map((question) => (
-              <button
-                key={question}
-                type="button"
-                disabled
-                aria-label={`${question} — coming soon`}
-                className="min-h-11 rounded-pill border border-black/10 px-3 py-2 text-xs text-ink/40 disabled:cursor-default"
-              >
-                {question}
-              </button>
-            ))}
-          </div>
-          <label htmlFor="ask" className="sr-only">
-            Ask anything
-          </label>
-          <input
-            id="ask"
-            type="text"
-            disabled
-            placeholder="Ask anything — coming in a later phase"
-            className="min-h-11 w-full rounded-pill border border-black/10 px-4 py-3 text-sm text-ink/50 disabled:cursor-default"
-          />
-          <Link
-            href="/consent"
-            className="flex min-h-11 items-center gap-2 rounded-card bg-indigo-950 px-4 py-3 text-sm font-medium text-white"
-          >
-            <span aria-hidden="true">🔗</span> Health records
-          </Link>
-        </Card>
+        <ProductAsk patientId={patientId} salt={drug.salt} />
+
+        <Link
+          href="/consent"
+          className="flex min-h-11 items-center gap-2 rounded-card bg-indigo-950 px-4 py-3 text-sm font-medium text-white"
+        >
+          <span aria-hidden="true">🔗</span> Health records
+        </Link>
       </main>
     </div>
   );
