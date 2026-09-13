@@ -7,6 +7,7 @@
  */
 
 import { findClassDuplicationsAmong, findContraindications, findInteractionsAmong, getCheaperGenerics, getDrugBySalt } from "@/lib/kb";
+import { scoreForKbSeverity } from "@/lib/router";
 import type { PatientGraph } from "@/types/graph";
 import type { ReconciliationFinding } from "@/types/reconciliation";
 
@@ -93,22 +94,7 @@ export function findingReferencesSalt(finding: ReconciliationFinding, salt: stri
   }
 }
 
-/**
- * Maps a KB severity word to a numeric band for the deterministic router
- * (lib/router.ts). The word itself is always KB-sourced; this mapping is
- * just the router's own scale, analogous to schedule -> legal-gate boolean.
- * Kept below the router's live-call threshold (80) so a single major
- * finding queues for pharmacist review rather than escalating to a call.
- */
-const SEVERITY_TO_SCORE: Record<string, number> = {
-  major: 70,
-  high: 70,
-  moderate: 50,
-  minor: 20,
-  info: 5,
-};
-
 export function severityScoreForSalt(findings: ReconciliationFinding[], salt: string): number {
   const relevant = findings.filter((f) => findingReferencesSalt(f, salt));
-  return relevant.reduce((max, f) => Math.max(max, SEVERITY_TO_SCORE[f.severity.toLowerCase()] ?? 0), 0);
+  return relevant.reduce((max, f) => Math.max(max, scoreForKbSeverity(f.severity)), 0);
 }
