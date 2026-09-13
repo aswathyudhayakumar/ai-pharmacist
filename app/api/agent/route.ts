@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getDrugBySalt, patientLegalStatusLabel } from "@/lib/kb";
+import { getDrugBySalt, patientLegalStatusLabel, priceWithCheapestGeneric } from "@/lib/kb";
 import { getPatientGraph, isValidPatientId } from "@/lib/graph";
 import { buildCandidateFindings, priceOrderItems, severityScoreForSalt } from "@/lib/reconciliation";
 import { buildSearchCandidates } from "@/lib/searchSafety";
 import { buildProductQaCandidates } from "@/lib/productQa";
+import { computeRefillInfo } from "@/lib/refills";
 import { assertAgentCanPerform, isRxSchedule, route, scheduleClassify, scoreForKbSeverity } from "@/lib/router";
 import { saveDraft } from "@/lib/queue";
 import { addToCart } from "@/lib/cart";
@@ -12,6 +13,7 @@ import type { PatientId } from "@/types/graph";
 import type { PreparedOrder, ReconciliationDraft, ReconciliationFinding } from "@/types/reconciliation";
 import type { ComposedSearchResult, SearchFinding } from "@/types/search";
 import type { ProductQaResult, QaFinding } from "@/types/productQa";
+import type { RefillGenericSaving, RefillProposal } from "@/types/refill";
 
 export const runtime = "nodejs";
 
@@ -191,11 +193,26 @@ Your job:
 
 Respond only by calling the draft_recommendation tool, using the summary field for your direct answer to the patient's question.`;
 
+const S4_SYSTEM_PROMPT = `You are a refill-reminder assistant embedded in a pharmacy app, proposing a one-tap refill for a maintenance medicine the patient already takes regularly. You never place the order yourself — the patient's own tap does that; you only propose and explain. This is patient-facing.
+
+You are given the medicine, its refill status ("due_soon" or "overdue" — already computed deterministically from days of supply and the date of last purchase; never recompute or contradict it), a list of candidate findings already checked deterministically, right now, against the knowledge base and the patient's current graph (any interaction or contraindication with their other current medicines), and whether a cheaper generic is available right now. Every fact given is already verified. You must never add, restate differently, or infer a new drug fact beyond what is given.
+
+Never use a drug-schedule code or regulatory jargon (e.g. "Schedule H", "OTC") anywhere.
+
+Your job:
+1. Write a short (1-3 sentence) refill proposal message.
+   - For status "due_soon": a plain, friendly refill-ready message. Make clear it's been freshly checked against their current medicines (not just a timer going off), and mention the generic saving if one is given.
+   - For status "overdue": frame it as a gentle adherence check-in, not a sales pitch. Acknowledge the gap in plain, non-alarming language, offer the refill, and suggest a quick word with the pharmacist if the gap was unintentional. Never scold, and never guess at or diagnose a reason for the gap — just acknowledge and offer.
+2. For each candidate finding given (if any), write a short (1-2 sentence) plain-language explanation grounded only in its given facts, for its own "why" citation. If none are given, there is nothing to explain.
+
+Respond only by calling the draft_recommendation tool. Use the summary field for your proposal message.`;
+
 interface AgentRequestBody {
   patientId?: string;
-  surface?: "S1_prescription" | "S2_search" | "S3_qa";
+  surface?: "S1_prescription" | "S2_search" | "S3_qa" | "S4_refill";
   query?: string;
   productSalt?: string;
+  medicationId?: string;
 }
 
 interface DraftToolInput {
@@ -514,6 +531,101 @@ async function runS3ProductQa(
   };
 }
 
+async function runS4RefillProposal(
+  patientId: PatientId,
+  medicationId: string
+): Promise<{ ok: true; proposal: RefillProposal } | { ok: false; status: number; error: string }> {
+  const graph = getPatientGraph(patientId);
+  const med = graph.currentMedications.find((m) => m.id === medicationId);
+  if (!med) {
+    return { ok: false, status: 404, error: "Unknown medicine." };
+  }
+
+  const info = computeRefillInfo(med);
+  if (!info || info.status === "on_track") {
+    return { ok: false, status: 400, error: "This medicine isn't due for a refill yet." };
+  }
+
+  // Re-check against the graph + KB right now, not whatever was true last
+  // time this medicine was ordered — this is the value over a blind
+  // subscribe-and-save timer. Reuses the exact same deterministic
+  // interaction/contraindication logic as S3 (buildProductQaCandidates):
+  // "does this salt clash with anything in the patient's own graph right
+  // now" is the same check whether it's asked from a product page or a
+  // refill proposal.
+  const candidateFindings = buildProductQaCandidates(graph, med.salt);
+  const mandatoryIds = candidateFindings.map((f) => f.id);
+
+  const genericPricing = priceWithCheapestGeneric(med.salt);
+  const genericSaving: RefillGenericSaving | undefined =
+    genericPricing?.cheapestGenericBrand !== undefined &&
+    genericPricing.cheapestGenericPriceInr !== undefined &&
+    genericPricing.savingInr !== undefined
+      ? {
+          brand: genericPricing.cheapestGenericBrand,
+          priceInr: genericPricing.cheapestGenericPriceInr,
+          brandPriceInr: genericPricing.brandPriceInr,
+          savingInr: genericPricing.savingInr,
+        }
+      : undefined;
+
+  // Identifying that this medicine has a refill gap, and recommending the
+  // cheaper generic where one applies, are this surface's core actions —
+  // both permitted (never gated).
+  assertAgentCanPerform("identify_refill_gap");
+  if (genericSaving) assertAgentCanPerform("recommend_generic_alternative");
+
+  const userPayload = {
+    instruction: "Propose a refill for this maintenance medicine.",
+    medicine: { brand: med.brand, salt: med.salt, strength: med.strength },
+    refillStatus: info.status,
+    daysUntilRunOut: info.daysUntilRunOut,
+    candidateFindings: candidateFindings.map((f) => ({ id: f.id, type: f.type, severity: f.severity, label: f.label, detail: f.detail })),
+    genericSaving,
+  };
+
+  const callResult = await callDraftTool(S4_SYSTEM_PROMPT, userPayload, "Couldn't prepare a refill proposal right now.");
+  if (!callResult.ok) return callResult;
+  const raw = callResult.toolUse.input as DraftToolInput;
+
+  const explanationById = new Map((raw.explanations ?? []).map((e) => [e.findingId, e.text]));
+  const selectedIds = new Set([...(raw.selectedFindingIds ?? []), ...mandatoryIds]);
+  const selectedFindings: QaFinding[] = candidateFindings
+    .filter((f) => selectedIds.has(f.id))
+    .map((f) => ({
+      ...f,
+      explanation: explanationById.get(f.id) ?? String(f.detail.note ?? f.detail.effect ?? ""),
+    }));
+
+  // The agent's contribution ends here — a proposal, nothing more. Adding
+  // to cart is a separate, explicit patient tap handled entirely on the
+  // client (RefillCard's confirm button, via the existing cart server
+  // action) — this route never touches the cart itself (NFR-S2, FR-R6: no
+  // standing auto-purchase permission, nothing silently reships).
+  assertAgentCanPerform("draft_recommendation");
+
+  const maxSeverityScore = candidateFindings.reduce((max, f) => Math.max(max, scoreForKbSeverity(f.severity)), 0);
+  const decision = route({ drugSalt: med.salt, clinicalSeverityScore: maxSeverityScore });
+  console.info(`S4 routing — ${med.salt}: ${decision.outcome} (${decision.reason})`);
+
+  const drug = getDrugBySalt(med.salt);
+  const unitPriceInr = genericSaving?.priceInr ?? drug?.brandPriceInr ?? 0;
+
+  return {
+    ok: true,
+    proposal: {
+      medicationId: med.id,
+      brand: med.brand,
+      salt: med.salt,
+      status: info.status,
+      message: raw.summary ?? "",
+      findings: selectedFindings,
+      genericSaving,
+      unitPriceInr,
+    },
+  };
+}
+
 export async function POST(request: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -576,10 +688,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result.result);
   }
 
+  if (body.surface === "S4_refill") {
+    if (!body.medicationId || !body.medicationId.trim()) {
+      return NextResponse.json({ error: "A medicationId is required." }, { status: 400 });
+    }
+    const result = await runS4RefillProposal(body.patientId, body.medicationId);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    // Patient-facing by design — this route only proposes; adding the
+    // refill to cart is a separate client-side tap against the existing
+    // cart server action, never touched here.
+    return NextResponse.json(result.proposal);
+  }
+
   return NextResponse.json(
     {
       status: "not_implemented",
-      message: "This surface isn't built yet. S1_prescription, S2_search, and S3_qa are all live.",
+      message: "This surface isn't built yet. S1_prescription, S2_search, S3_qa, and S4_refill are all live.",
       tools: AGENT_TOOLS.map((t) => t.name),
     },
     { status: 501 }

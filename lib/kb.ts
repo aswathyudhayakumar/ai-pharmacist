@@ -8,6 +8,7 @@ import type {
   Schedule,
   SubstitutionTrap,
 } from "@/types/kb";
+import type { GenericPricing } from "@/types/refill";
 
 interface RawDrug {
   salt: string;
@@ -201,4 +202,26 @@ export function findSubstitutionTrap(query: string): SubstitutionTrap | undefine
 
 export function getCheaperGenerics(salt: string) {
   return getDrugBySalt(salt)?.genericEquivalents ?? [];
+}
+
+/**
+ * Current brand price plus the cheapest generic equivalent right now, if one
+ * saves money — used by the S4 refill re-check ("cheaper generic now
+ * available"). A fresh, small helper rather than a retrofit of the
+ * generic-saving logic already inlined in lib/reconciliation.ts, so this new
+ * surface doesn't risk the already-shipped S1 reconciliation path.
+ */
+export function priceWithCheapestGeneric(salt: string): GenericPricing | undefined {
+  const drug = getDrugBySalt(salt);
+  if (!drug) return undefined;
+  const generics = getCheaperGenerics(salt);
+  if (generics.length === 0) return { brandPriceInr: drug.brandPriceInr };
+  const cheapest = generics.reduce((a, b) => (a.priceInr < b.priceInr ? a : b));
+  if (cheapest.priceInr >= drug.brandPriceInr) return { brandPriceInr: drug.brandPriceInr };
+  return {
+    brandPriceInr: drug.brandPriceInr,
+    cheapestGenericBrand: cheapest.brand,
+    cheapestGenericPriceInr: cheapest.priceInr,
+    savingInr: drug.brandPriceInr - cheapest.priceInr,
+  };
 }

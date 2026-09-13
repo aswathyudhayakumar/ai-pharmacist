@@ -61,6 +61,18 @@ export default async function HomePage() {
           </span>
         </Link>
 
+        <Link href="/medicines" className="flex min-h-11 items-center justify-between rounded-card bg-white px-4 py-4 ring-1 ring-black/5 shadow-sm">
+          <span className="flex items-center gap-3 font-semibold text-ink">
+            <span aria-hidden="true" className="text-2xl">
+              💊
+            </span>
+            My medicines
+          </span>
+          <span aria-hidden="true" className="text-coral">
+            →
+          </span>
+        </Link>
+
         <Card className="p-4">
           <h2 className="sr-only">Shop by category</h2>
           <ul className="grid grid-cols-4 gap-4">
