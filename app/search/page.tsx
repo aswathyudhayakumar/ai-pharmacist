@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { BackBar } from "@/components/BackBar";
 import { Card } from "@/components/ui";
-import { findSubstitutionTrap, getKnowledgeBase, patientLegalStatusLabel } from "@/lib/kb";
+import { catalogueSearch, patientLegalStatusLabel } from "@/lib/kb";
 import { getCartCount } from "@/lib/cart";
 import { getActivePatientId } from "@/lib/session";
-import ComposedSearchResults from "./ComposedSearchResults";
+import SearchResults from "./SearchResults";
+import type { BaseResult } from "./SearchResults";
 
 export default async function SearchPage({
   searchParams,
@@ -14,16 +15,20 @@ export default async function SearchPage({
   const { q } = await searchParams;
   const cartCount = await getCartCount();
   const patientId = await getActivePatientId();
-  const kb = getKnowledgeBase();
-  const query = (q ?? "").trim().toLowerCase();
+  const query = (q ?? "").trim();
 
-  // A condition/symptom query gets routed to the agent-composed, graph-aware
-  // path instead of the plain catalogue filter below (FR-S3) — this is what
-  // catches "diabetes medicine" surfacing a homeopathic drop as if it treats
-  // the condition, rather than the patient's actual prescribed treatment.
-  const trap = query ? findSubstitutionTrap(query) : undefined;
-
-  const results = query && !trap ? kb.drugs.filter((d) => d.salt.toLowerCase().includes(query) || d.class.toLowerCase().includes(query)) : kb.drugs;
+  // The app's original catalogue search runs exactly as before and renders
+  // immediately. When there's a query, the agentic overlay (SearchResults)
+  // mounts on top of this same set — reviewing it against the patient's graph,
+  // annotating and re-ranking — so the base list is never blocked on the agent.
+  const drugs = catalogueSearch(query.toLowerCase());
+  const baseResults: BaseResult[] = drugs.map((d) => ({
+    salt: d.salt,
+    brand: d.brand,
+    class: d.class,
+    legalStatus: patientLegalStatusLabel(d.schedule),
+    priceInr: d.brandPriceInr,
+  }));
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-page">
@@ -44,18 +49,15 @@ export default async function SearchPage({
         </form>
       </header>
       <main id="main-content" className="flex-1 space-y-3 px-4 py-4">
-        {trap ? (
-          // Keyed by patient + query so switching either forces a fresh
-          // mount (and a fresh "loading" state) instead of flashing stale
-          // results from the previous fetch while the new one is in flight.
-          <ComposedSearchResults key={`${patientId}:${query}`} patientId={patientId} query={query} />
+        {query ? (
+          // Keyed by patient + query so switching either forces a fresh mount
+          // (and a fresh review pass) instead of showing stale annotations.
+          <SearchResults key={`${patientId}:${query.toLowerCase()}`} patientId={patientId} query={query.toLowerCase()} baseResults={baseResults} />
         ) : (
           <>
-            <p className="text-sm text-ink/60">
-              {query ? `${results.length} result${results.length === 1 ? "" : "s"} for "${q}"` : "Browse all medicines"}
-            </p>
+            <p className="text-sm text-ink/60">Browse all medicines</p>
             <ul className="space-y-3">
-              {results.map((drug) => (
+              {baseResults.map((drug) => (
                 <li key={drug.salt}>
                   <Card className="p-4">
                     <Link href={`/product/${encodeURIComponent(drug.salt)}`} className="block">
@@ -65,19 +67,14 @@ export default async function SearchPage({
                           <p className="text-sm text-ink/60">{drug.class}</p>
                         </div>
                         <span className="shrink-0 rounded-pill bg-black/5 px-2.5 py-1 text-xs font-semibold text-ink/70">
-                          {patientLegalStatusLabel(drug.schedule)}
+                          {drug.legalStatus}
                         </span>
                       </div>
-                      <p className="mt-2 text-sm font-semibold text-ink">₹{drug.brandPriceInr}</p>
+                      <p className="mt-2 text-sm font-semibold text-ink">₹{drug.priceInr}</p>
                     </Link>
                   </Card>
                 </li>
               ))}
-              {query && results.length === 0 && (
-                <li className="rounded-card bg-white p-4 text-sm text-ink/60">
-                  No matches in the seeded catalogue. Try “paracetamol” or “metformin”.
-                </li>
-              )}
             </ul>
           </>
         )}

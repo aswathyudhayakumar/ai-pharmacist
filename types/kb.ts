@@ -53,6 +53,8 @@ export interface SubstitutionTrap {
   redirectSalt?: string;
   reason: string;
   redirect: string;
+  /** A curated prescription alternative that could fit the same condition but must go through pharmacist review before dispensing — surfaced only for a patient who has this condition's treatment on file. */
+  pharmacistReviewAlternative?: { salt: string; reason: string };
 }
 
 export interface KnowledgeBase {

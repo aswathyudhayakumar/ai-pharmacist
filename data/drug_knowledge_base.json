@@ -2,6 +2,7 @@
   "_comment": "Drug knowledge base seed. General medical truth, patient-independent. The agent RETRIEVES from this; it never generates a medical fact. schedule drives the deterministic legal axis; severity fields feed the clinical axis. Illustrative for the prototype — not a clinical source.",
   "drugs": [
     { "salt": "Metformin", "class": "Biguanide (antidiabetic)", "schedule": "H", "otc": false, "brand_price_inr": 45, "generic_equivalents": [{ "brand": "Metformin (generic)", "price_inr": 25 }], "notes": "First-line for type 2 diabetes." },
+    { "salt": "Glimepiride", "class": "Sulfonylurea (antidiabetic)", "schedule": "H", "otc": false, "brand_price_inr": 75, "generic_equivalents": [{ "brand": "Glimepiride (generic)", "price_inr": 35 }], "notes": "Prescription antidiabetic; a pharmacist or doctor decides suitability." },
     { "salt": "Amlodipine", "class": "Calcium channel blocker (antihypertensive)", "schedule": "H", "otc": false, "brand_price_inr": 40, "generic_equivalents": [{ "brand": "Amlodipine (generic)", "price_inr": 18 }] },
     { "salt": "Atorvastatin", "class": "Statin (lipid-lowering)", "schedule": "H", "otc": false, "brand_price_inr": 95, "generic_equivalents": [{ "brand": "Atorvastatin (generic)", "price_inr": 40 }] },
     { "salt": "Rosuvastatin", "class": "Statin (lipid-lowering)", "schedule": "H", "otc": false, "brand_price_inr": 210, "generic_equivalents": [{ "brand": "Rosuvastatin (generic)", "price_inr": 55 }] },
@@ -40,6 +41,7 @@
   "contraindications": [
     { "salt": "Ibuprofen", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Caution: renal risk in older diabetics; monitor use." },
     { "salt": "Sulfonamides", "against_allergy": "Sulfonamides", "severity": "high", "note": "Known patient allergy — avoid." },
+    { "salt": "Glimepiride", "against_allergy": "Sulfonamides", "severity": "moderate", "note": "Sulfonylureas share a sulfonamide component; with a sulfa allergy on file a pharmacist should review suitability before dispensing." },
     { "salt": "Pseudoephedrine", "against_condition": "Hypertension", "severity": "moderate", "note": "Sympathomimetic — can raise blood pressure; caution or avoid unless advised by your doctor." },
     { "salt": "Phenylephrine", "against_condition": "Hypertension", "severity": "moderate", "note": "Sympathomimetic — can raise blood pressure; caution or avoid unless advised by your doctor." },
     { "salt": "Pseudoephedrine", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Can raise blood glucose levels; caution advised." },
@@ -50,7 +52,7 @@
     { "salt": "Naproxen", "against_condition": "Type 2 diabetes", "severity": "moderate", "note": "Caution: renal risk in older diabetics; monitor use." }
   ],
   "substitution_traps": [
-    { "query": "diabetes medicine", "trap_salt": "Homeopathic-R40", "redirect_salt": "Metformin", "reason": "Presented as a diabetes remedy but does not lower glucose and is not a substitute for prescribed treatment.", "redirect": "The patient's prescribed diabetes medicine is Metformin (Glycomet) — offer a refill instead." }
+    { "query": "diabetes medicine", "trap_salt": "Homeopathic-R40", "redirect_salt": "Metformin", "reason": "Presented as a diabetes remedy but does not lower glucose and is not a substitute for prescribed treatment.", "redirect": "The patient's prescribed diabetes medicine is Metformin (Glycomet) — offer a refill instead.", "pharmacist_review_alternative": { "salt": "Glimepiride", "reason": "A prescription option sometimes added alongside metformin when blood sugar isn't fully controlled — a pharmacist can review whether it suits you." } }
   ],
   "schedules": {
     "OTC": "No prescription or per-order pharmacist gate.",
