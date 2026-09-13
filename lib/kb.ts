@@ -49,6 +49,7 @@ interface RawSubstitutionTrap {
   redirect_salt?: string;
   reason: string;
   redirect: string;
+  pharmacist_review_alternative?: { salt: string; reason: string };
 }
 
 interface RawKb {
@@ -102,6 +103,9 @@ function buildKnowledgeBase(): KnowledgeBase {
     redirectSalt: t.redirect_salt,
     reason: t.reason,
     redirect: t.redirect,
+    pharmacistReviewAlternative: t.pharmacist_review_alternative
+      ? { salt: t.pharmacist_review_alternative.salt, reason: t.pharmacist_review_alternative.reason }
+      : undefined,
   }));
 
   return {
@@ -122,6 +126,18 @@ export function getKnowledgeBase(): KnowledgeBase {
 
 export function getDrugBySalt(salt: string): Drug | undefined {
   return knowledgeBase.drugs.find((d) => d.salt.toLowerCase() === salt.toLowerCase());
+}
+
+/**
+ * The app's original plain catalogue search — a substring match over salt and
+ * class, unchanged by the agentic layer. Shared by the search page (for the
+ * instant base render) and the agent route (as the retrieval set the overlay
+ * annotates and re-ranks), so both start from exactly the same result list.
+ */
+export function catalogueSearch(query: string): Drug[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return knowledgeBase.drugs;
+  return knowledgeBase.drugs.filter((d) => d.salt.toLowerCase().includes(q) || d.class.toLowerCase().includes(q));
 }
 
 /** Deterministic legal-schedule lookup (FR-R2) — never model-decided. */

@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getDrugBySalt, patientLegalStatusLabel, priceWithCheapestGeneric } from "@/lib/kb";
 import { getPatientGraph, isValidPatientId } from "@/lib/graph";
 import { buildCandidateFindings, priceOrderItems, severityScoreForSalt } from "@/lib/reconciliation";
-import { buildSearchCandidates } from "@/lib/searchSafety";
+import { buildSearchOverlay } from "@/lib/searchSafety";
 import { buildProductQaCandidates } from "@/lib/productQa";
 import { computeRefillInfo } from "@/lib/refills";
 import { assertAgentCanPerform, isRxSchedule, route, scheduleClassify, scoreForKbSeverity } from "@/lib/router";
@@ -11,7 +11,7 @@ import { saveDraft } from "@/lib/queue";
 import { addToCart } from "@/lib/cart";
 import type { PatientId } from "@/types/graph";
 import type { PreparedOrder, ReconciliationDraft, ReconciliationFinding } from "@/types/reconciliation";
-import type { ComposedSearchResult, SearchFinding } from "@/types/search";
+import type { ComposedSearchResult, SearchResultItem } from "@/types/search";
 import type { ProductQaResult, QaFinding } from "@/types/productQa";
 import type { RefillGenericSaving, RefillProposal } from "@/types/refill";
 
@@ -164,20 +164,24 @@ Your job:
 
 Respond only by calling the draft_recommendation tool.`;
 
-const S2_SYSTEM_PROMPT = `You are a search-safety composer embedded in a pharmacy app. A patient searched for something that matches a known condition/symptom pattern in our knowledge base, and you are composing what they see — directly, since this is patient-facing.
+const S2_SYSTEM_PROMPT = `You are the reasoning layer sitting on top of a pharmacy app's normal search. The app already retrieved and ranked the results; your job is to review them over THIS patient's health graph and write plain-language annotations. This is patient-facing.
 
-You are given the patient's search query, their relevant conditions, and one or more candidate results already computed deterministically from the knowledge base and patient graph. Every fact in a candidate — legal status, class, price, the reason a substitution is unsafe — is already verified. You must never add, restate differently, or infer a new drug fact beyond what a candidate already states.
+You are given the search query, the patient's relevant conditions and current medicines, and a list of result items already computed deterministically from the knowledge base and patient graph. Each item carries its own already-verified facts (legal status in plain language, class, price) and a list of graph-aware flags (interactions with the patient's current medicines, contraindications against their conditions, allergy cautions, therapeutic-class duplications, cheaper-generic savings). Every fact and every flag is already verified and will be shown to the patient regardless of what you write — you cannot add, remove, reorder, or contradict them. You only write prose.
 
-A candidate of type "unsafe_substitution" flags a product being searched for as if it treats the condition, when it does not — you must always include it in your response; never suppress or hide a safety flag, though you choose its wording. A candidate of type "promoted_treatment" is the patient's own actual prescribed treatment for the same condition — when given, include it and put it first, since it is the medically correct, personalized answer the patient should see before anything else.
+Item types you may see:
+- "promoted_treatment": the patient's OWN prescribed treatment for this condition. It is the correct personalized answer.
+- "pharmacist_review_alternative": a prescription option that could fit the same condition but must go through a pharmacist before it can be dispensed. Frame it as an option a pharmacist can review with them — never as something to take now, never as your recommendation, and never diagnose. If it carries an allergy or interaction flag, that is exactly why a pharmacist needs to review it — say so plainly.
+- "unsafe_substitution": a product being presented as if it treats the condition when it does not. Always be honest that it is not a substitute for prescribed treatment.
+- "catalogue_result": an ordinary search result. Annotate any personal caution its flags describe; if it has no flags, a brief relevance line is fine.
 
-Never use a drug-schedule code or regulatory jargon (e.g. "Schedule H", "H1", "OTC") in your explanation — if legal status is worth mentioning, say it in plain language only (e.g. "needs a doctor's prescription" or "available without a prescription").
+Never use a drug-schedule code or regulatory jargon (e.g. "Schedule H", "H1", "OTC"). Legal status is already plain language — use that phrasing.
 
 Your job:
-1. Decide which candidates to surface (almost always all of them — a safety flag must never be omitted).
-2. For each one, write a short (1-2 sentence) plain-language explanation grounded only in its given facts.
-3. Write a one-sentence overall summary of why these results look the way they do.
+1. Write a one-sentence overall summary of how these results were reviewed for this patient.
+2. For each item, write a short (1-2 sentence) annotation grounded only in that item's given facts and flags.
+3. For each flag, write a short (1 sentence) explanation grounded only in that flag's given facts.
 
-Respond only by calling the draft_recommendation tool.`;
+Use the explanations array: put each item's annotation under that item's id, and each flag's explanation under that flag's id. Respond only by calling the draft_recommendation tool.`;
 
 const S3_SYSTEM_PROMPT = `You are a graph-aware product Q&A assistant embedded in a pharmacy app, answering a patient's own question about a specific product directly — this is patient-facing.
 
@@ -406,64 +410,89 @@ async function runS1Reconciliation(
   return { ok: true, order };
 }
 
-async function runS2ConditionSearch(
+/** Deterministic fallback prose so a flag's meaning is never blank even if the model skips it — the flag is shown regardless of what the model writes. */
+function fallbackFlagProse(detail: Record<string, unknown>): string {
+  return String(detail.note ?? detail.effect ?? detail.reason ?? "");
+}
+
+function fallbackItemProse(item: SearchResultItem): string {
+  return String(item.detail.reason ?? item.detail.notes ?? "");
+}
+
+async function runS2Search(
   patientId: PatientId,
   query: string
 ): Promise<{ ok: true; result: ComposedSearchResult } | { ok: false; status: number; error: string }> {
   const graph = getPatientGraph(patientId);
-  const candidateFindings = buildSearchCandidates(graph, query);
-  if (candidateFindings.length === 0) {
-    return { ok: false, status: 404, error: "No condition/symptom match for this query." };
+
+  // The app's own catalogue search retrieves; this overlay annotates and
+  // scores that set deterministically. Every flag, the re-rank score, and the
+  // pharmacist-review alternative are computed here in code — the model that
+  // follows only writes prose over them (NFR-S1, FR-S3).
+  const items = buildSearchOverlay(graph, query);
+  if (items.length === 0) {
+    return { ok: false, status: 404, error: "No matches for this search." };
   }
 
-  // Safety flags are never optional — the model can only add context around
-  // one, never suppress it. Enforced here in code, not left to the model's
-  // selection (FR-S3: "unsafe substitutions are flagged and redirected").
-  const mandatoryIds = candidateFindings.filter((f) => f.type === "unsafe_substitution").map((f) => f.id);
-
   const userPayload = {
-    instruction: "Compose safety-aware search results for this condition/symptom query.",
+    instruction: "Review and annotate these search results over the patient's health graph.",
     query,
     patient: {
       name: graph.patient.name,
       conditions: graph.conditions.map((c) => c.name),
+      currentMedications: graph.currentMedications.map((m) => `${m.brand} (${m.salt})`),
     },
-    candidateFindings: candidateFindings.map((f) => ({ id: f.id, type: f.type, label: f.label, detail: f.detail })),
+    items: items.map((it) => ({
+      id: it.id,
+      type: it.type,
+      label: it.label,
+      class: it.class,
+      legalStatus: it.legalStatus,
+      priceInr: it.priceInr,
+      reason: it.detail.reason,
+      needsPharmacistReview: it.needsPharmacistReview,
+      flags: it.flags.map((f) => ({ id: f.id, kind: f.kind, severity: f.severity, label: f.label, detail: f.detail })),
+    })),
   };
 
-  const callResult = await callDraftTool(S2_SYSTEM_PROMPT, userPayload, "Couldn't compose safety-aware results right now.");
+  const callResult = await callDraftTool(S2_SYSTEM_PROMPT, userPayload, "Couldn't review these results right now.");
   if (!callResult.ok) return callResult;
   const raw = callResult.toolUse.input as DraftToolInput;
 
+  // The model supplies prose keyed by id; it can never remove a flag or change
+  // the order. The final items are built from the deterministic overlay, prose
+  // injected, then sorted by the code-computed rankScore (the model's
+  // selectedFindingIds is advisory only and never gates a flag's visibility).
   const explanationById = new Map((raw.explanations ?? []).map((e) => [e.findingId, e.text]));
-  const selectedIds = new Set([...(raw.selectedFindingIds ?? []), ...mandatoryIds]);
-  const selectedFindings: SearchFinding[] = candidateFindings
-    .filter((f) => selectedIds.has(f.id))
-    .map((f) => ({
-      ...f,
-      explanation: explanationById.get(f.id) ?? (f.type === "unsafe_substitution" ? String(f.detail.reason ?? "") : ""),
-    }));
+  const composed: SearchResultItem[] = items
+    .map((it) => ({
+      ...it,
+      explanation: explanationById.get(it.id) ?? fallbackItemProse(it),
+      flags: it.flags.map((f) => ({ ...f, explanation: explanationById.get(f.id) ?? fallbackFlagProse(f.detail) })),
+    }))
+    .sort((a, b) => b.rankScore - a.rankScore);
 
-  // The agent's contribution ends here — an explain/recommend composition,
-  // nothing more. This surface never approves a substitution or dispenses;
-  // it only explains why one candidate is unsafe and recommends the
-  // patient's own prescribed treatment instead (NFR-S2, FR-R6).
+  // The agent's contribution ends here — it explains and (for the alternative)
+  // drafts a recommendation, nothing more. It never approves a substitution or
+  // dispenses; the pharmacist-review alternative is a draft, gated to a human
+  // (NFR-S2, FR-R6). Both actions are permitted; assert at the point of use.
   assertAgentCanPerform("explain_medication");
+  if (composed.some((it) => it.type === "pharmacist_review_alternative")) {
+    assertAgentCanPerform("draft_recommendation");
+  }
 
-  // Routing record only — an OTC/AYUSH item with low clinical risk
-  // auto-surfaces directly to the patient with a cited why (outcome 1);
-  // computed for the audit trail, not to decide whether to compose a result.
-  candidateFindings.forEach((f) => {
-    const salt = typeof f.detail.salt === "string" ? f.detail.salt : undefined;
-    if (!salt) return;
-    const decision = route({ drugSalt: salt, clinicalSeverityScore: f.type === "unsafe_substitution" ? 20 : 0 });
-    console.info(`S2 routing — ${salt}: ${decision.outcome} (${decision.reason})`);
+  // Routing record (audit trail) — deterministic, independent of the prose.
+  composed.forEach((it) => {
+    const decision = route({ drugSalt: it.salt, clinicalSeverityScore: maxItemSeverity(it) });
+    console.info(`S2 routing — ${it.salt} (${it.type}): ${decision.outcome} (${decision.reason})`);
   });
 
-  return {
-    ok: true,
-    result: { query, summary: raw.summary ?? "", findings: selectedFindings },
-  };
+  return { ok: true, result: { query, summary: raw.summary ?? "", items: composed } };
+}
+
+/** Highest KB-severity score among an item's flags — feeds the audit routing record only. */
+function maxItemSeverity(item: SearchResultItem): number {
+  return item.flags.reduce((max, f) => Math.max(max, scoreForKbSeverity(f.severity)), 0);
 }
 
 async function runS3ProductQa(
@@ -662,12 +691,12 @@ export async function POST(request: NextRequest) {
     if (!body.query || !body.query.trim()) {
       return NextResponse.json({ error: "A search query is required." }, { status: 400 });
     }
-    const result = await runS2ConditionSearch(body.patientId, body.query);
+    const result = await runS2Search(body.patientId, body.query);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
-    // This surface is patient-facing by design — the composed findings and
-    // their explanations go straight back to whoever searched.
+    // This surface is patient-facing by design — the reranked, annotated
+    // results go straight back to whoever searched.
     return NextResponse.json(result.result);
   }
 
